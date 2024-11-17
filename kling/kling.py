@@ -2,7 +2,7 @@ import argparse
 import os
 import time
 import contextlib
-from typing import Optional
+from typing import Optional, Union
 from enum import Enum
 from http.cookies import SimpleCookie
 
@@ -136,7 +136,7 @@ class BaseGen:
         assert result_data.get("status") == 200
         return result_data.get("data").get("url")
 
-    def fetch_metadata(self, task_id: str) -> tuple[dict, TaskStatus]:
+    def fetch_metadata(self, task_id: int) -> tuple[dict, TaskStatus]:
         url = f"{self.base_url}api/task/status?taskId={task_id}"
         response = self.session.get(url)
         data = response.json().get("data")
@@ -146,6 +146,17 @@ class BaseGen:
             return data, TaskStatus.COMPLETED
         elif data.get("status") in [9, 50]:
             return data, TaskStatus.FAILED
+        else:
+            return data, TaskStatus.PENDING
+
+    def fetch_video_url(self, work_id: str) -> tuple[str, TaskStatus]:
+        """Get video URL without watermark"""
+        url = f"{self.base_url}api/works/batch_download_v2?workIds={work_id}"
+        response = self.session.get(url)
+        data = response.json().get("data")
+        assert data is not None
+        if data.get("status") == "success":
+            return data["cdnUrl"], TaskStatus.COMPLETED
         else:
             return data, TaskStatus.PENDING
 
@@ -246,7 +257,8 @@ class VideoGen(BaseGen):
                     return []
                 else:
                     for work in works:
-                        resource = work.get("resource", {}).get("resource")
+                        work_id = work["workId"]
+                        resource, _ = self.fetch_video_url(work_id)
                         if resource:
                             # sleep for 2s for waiting the video to be ready in kuaishou server
                             time.sleep(2)
@@ -261,7 +273,8 @@ class VideoGen(BaseGen):
         is_high_quality: bool = False,
         auto_extend: bool = False,
         model_name: str = "1.0",
-    ) -> list:
+        _return_task_only: bool = False,
+    ) -> Union[list, str]:  # Updated return type to include str for task_id
         self.session.headers["user-agent"] = ua.random
         if image_path or image_url:
             if image_path:
@@ -354,6 +367,24 @@ class VideoGen(BaseGen):
                 "inputs": [],
                 "type": model_type,
             }
+
+        if _return_task_only:
+            # Just submit the task and return the task ID
+            response = self.session.post(
+                self.submit_url,
+                json=payload,
+            )
+            if not response.ok:
+                raise Exception(f"Error response {str(response)}")
+            
+            response_body = response.json()
+            request_id = response_body.get("data", {}).get("task", {}).get("id")
+            if not request_id:
+                raise Exception("Could not get request ID")
+            
+            self.video_id_list.append(request_id)
+            return request_id  # Return the task ID directly
+        
         if auto_extend:
             print("will generate and extending video...")
             self._get_video_with_payload(payload)

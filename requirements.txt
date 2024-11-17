@@ -1,3 +1,9 @@
 requests
 rich
 fake-useragent
+fastapi
+uvicorn
+python-dotenv
+httpx
+pydantic
+typing-extensions
