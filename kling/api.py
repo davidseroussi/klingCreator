@@ -32,7 +32,10 @@ class VideoResponse(BaseModel):
 async def poll_and_notify(task_id: int, webhook_url: str):
     """Background task to poll video status and notify webhook"""
     generator = VideoGen(KLING_COOKIE)
-    async with httpx.AsyncClient() as client:
+    
+    # TODO: remove this when in production
+    # async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=False) as client:
         while True:
             try:
                 # Use the existing fetch_metadata function
